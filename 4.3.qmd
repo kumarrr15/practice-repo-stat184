@@ -1,0 +1,198 @@
+``` markdown
+---
+title: "Applied Data Visualizations Portfolio"
+author: "Kumar Duvvapu"
+date: today
+format: 
+  html:
+    toc: true
+    theme: cosmo
+---
+
+## Busiest Airports Analysis
+
+The aviation industry experienced a severe global disruption followed by a tiered recovery, which becomes immediately apparent when analyzing passenger traffic data from 2020 through 2025. 
+
+Looking at the data, Atlanta (ATL) stands out as the dominant outlier in sheer volume. As a massive domestic hub, it was able to recover much faster than airports relying heavily on international borders, making it the only airport to process over 100 million passengers by 2023. Meanwhile, the visual anomaly of Beijing (PKX)—a sharp drop in 2022 followed by the steepest growth rate of any airport—perfectly aligns with regional lockdowns and subsequent reopening policies. By 2025, international hubs like Dubai (DXB), Tokyo (HND), and London (LHR) stabilized into a tight grouping, illustrating that global international travel has returned to a more predictable year-over-year growth pattern.
+```
+
+```{r}
+#| label: airport-table
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(knitr)
+
+airports_raw <- data.frame(
+  airport = c("ATL", "FRA", "PKX", "DXB", "HND", "LHR"),
+  "2020" = c(42918685, 18770998, 16091449, 25831363, 31135000, 22109726),
+  "2021" = c(75537213, 24800998, 25051012, 29110609, 26563000, 19393145),
+  "2022" = c(93699630, 48918118, 10277323, 66069981, 50330000, 61614508),
+  "2023" = c(104653451, 59355389, 39410521, 86994365, 78719586, 79183366),
+  "2024" = c(108067766, 61564957, 47000000, 92331506, 85900167, 83884572),
+  "2025" = c(106302208, 63189666, 53618949, 95200000, 91430000, 84463000),
+  check.names = FALSE
+)
+
+busiest_airports <- airports_raw |>
+  pivot_longer(cols = -airport, names_to = "year", values_to = "passengers") |>
+  mutate(year = as.numeric(year))
+
+busiest_airports |>
+  pivot_wider(names_from = year, values_from = passengers) |>
+  arrange(desc(.data[["2025"]])) |>
+  kable(caption = "Passenger Traffic at Six Major Global Airports (2020-2025)", format.args = list(big.mark = ","))
+```
+
+```{r}
+#| label: airport-plot
+#| echo: false
+#| message: false
+#| warning: false
+
+library(scales)
+
+ggplot(busiest_airports, aes(x = year, y = passengers, color = airport)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  labs(
+    title = "Passenger Traffic Trends at Six Major Global Airports",
+    subtitle = "Annual passenger counts from 2020 to 2025",
+    x = "Year",
+    y = "Total Passengers",
+    color = "Airport Code"
+  ) +
+  scale_y_continuous(labels = label_comma()) +
+  theme_minimal()
+```
+
+## Monte Carlo Numerical Integration
+
+The exact answer to the numerical integration of this assigned Weibull Distribution is effectively 1.0. Because the function being integrated is a Probability Density Function (PDF), the total area under the curve across its entire range must equal 1.
+
+The small multiple visualization below illustrates the Law of Large Numbers in an intuitive way. At lower resolutions (n=10 and n=100), the stochastic "noise" of the simulation is highly visible. A single random coordinate has a disproportionate impact on the final result, yielding inaccurate estimates. However, as the resolution increases to n=10,000, this jitter evaporates. The points form a dense, high-fidelity fill that perfectly defines the area under the curve, pulling the numerical estimate tightly toward the true value.
+
+```{r}
+#| label: monte-carlo-plot
+#| echo: false
+#| message: false
+#| warning: false
+
+library(patchwork)
+
+run_weibull_mc <- function(n) {
+  data.frame(
+    x = runif(n, min = 0, max = 4),
+    y = runif(n, min = 0, max = 0.8),
+    resolution = n
+  ) |>
+  mutate(
+    f_x = dweibull(x, shape = 1.5, scale = 1),
+    flag = ifelse(y <= f_x, "on/below", "above")
+  )
+}
+
+make_mc_plot <- function(n) {
+  mc_data <- run_weibull_mc(n)
+  window_area <- 3.2 
+  est_int <- mean(mc_data$flag == "on/below") * window_area
+  
+  ggplot(mc_data, aes(x = x, y = y, color = flag)) +
+    geom_point(alpha = 0.5, size = 0.8) +
+    stat_function(fun = dweibull, args = list(shape = 1.5, scale = 1), xlim = c(0,4), color = "black", linewidth = 1) +
+    labs(title = paste("n =", n), subtitle = paste("Estimate:", round(est_int, 4))) +
+    theme_minimal() +
+    theme(legend.position = "none") + 
+    coord_cartesian(xlim = c(0,4), ylim = c(0, 0.8))
+}
+
+plot10 <- make_mc_plot(10)
+plot100 <- make_mc_plot(100)
+plot1000 <- make_mc_plot(1000)
+plot10000 <- make_mc_plot(10000)
+
+plot10 + plot100 + plot1000 + plot10000
+```
+
+## Planning and Prompting GenAI Tools
+
+For this section, I developed a plan to wrangle and visualize the newly provided `calcium.csv` dataset. Examining the raw data revealed it is in a "wide" format, tracking measurements across four time points (y0 to y3) for two distinct groups (the second group appended with a `.1`). My plan required generating a subject ID, utilizing `pivot_longer()` to tidy the data into a single measured column, dropping `NA` values resulting from uneven group sizes, and then feeding that clean data into `ggplot2` for a comparative line graph tracking individuals over time.
+
+**Comparing the Prompts:** When the generic prompt was submitted to ChatGPT ("Create a data visualization for these data. Calcium.csv"), the GenAI tool completely failed to understand the experimental design. It simply calculated the mean of each column and plotted those averages as independent points, completely ignoring the fact that the columns represented repeated time measurements across two distinct experimental groups.
+
+Conversely, when using my plan-based prompt (which explicitly gave the AI the data shape, instructed it to use `pivot_longer`, extract the time/group variables, and map them to a line plot grouped by subject), the GenAI output was an excellent piece of working code. The AI was highly capable of generating the exact syntax for the complex data transformation, but it completely relied on *me* to supply the data-specific architectural logic to make those choices in the first place. This proves that GenAI is a powerful coding assistant, but a poor independent data analyst when left to its own devices.
+
+This course has been incredibly useful in helping me bridge the gap between abstract mathematical concepts and practical programming. Working heavily in R and mastering the tidyverse has provided an entirely new perspective on data wrangling. Seeing how fluidly data can be reshaped, mutated, and pipelined in R perfectly complements the relational logic I use when building and normalizing SQL databases.
+
+Furthermore, utilizing ggplot2 to manually simulate and visualize probability density functions made the statistics tangibly click in a way that simply reading formulas never did. Finally, putting this all together in Quarto has underscored the importance of reproducible research, ensuring that my code, visualizations, and narrative analysis can exist harmoniously in one professional document.
+
+## Appendix A: GenAI Usage
+
+-   **Tool Used:** ChatGPT
+-   **Date of Usage:** 11th April, 2026
+
+**Generic Prompt Used:** "Create a data visualization for these data. Calcium.csv" **\
+\
+Generated:** "Here is the code to create a scatterplot of carat versus price using the diamonds dataset:
+
+I created a visualization showing the average value of each column in your dataset.
+
+What this shows:
+
+-   Each point represents the mean (average) of one column (y0, y1, y2, y3, etc.).
+
+-   You can quickly compare which variables tend to have higher or lower values overall.
+
+-   For example, some columns cluster around \~70–73, while others drop closer to \~65.
+
+If you want something more insightful, I can also create: Boxplots (to show spread and outliers), Time series plots (if rows represent time/order), Correlation heatmaps, Side-by-side comparisons (e.g., y0 vs y0.1). Just tell me 👍
+
+```{}
+```
+
+**Plan-Based Prompt Used:** "Using the diamonds dataset in R, write tidyverse code to first take a stratified random sample of 500 diamonds per clarity level. Then, pipe that into a ggplot scatterplot of carat vs. price colored by clarity. Counteract overplotting by setting alpha to 0.5. Add linear trend lines without standard error bands. Format the y-axis as dollars and apply theme_minimal()."
+
+**Plan-Based Response Text Generated:** "Here is the code based on your plan:
+
+```{library(tidyverse)}
+
+# Load data and add subject ID
+calcium_clean <- read.csv("calcium.csv") %>%
+  mutate(Subject = row_number()) %>%
+  
+  # Pivot all 'y' columns to long format
+  pivot_longer(
+    cols = starts_with("y"),
+    names_to = "TimeGroup",
+    values_to = "Value"
+  ) %>%
+  
+  # Drop NA rows
+  drop_na(Value) %>%
+  
+  # Extract Time (the number right after 'y') and Group (whether it has '.1')
+  mutate(
+    Time = as.numeric(str_extract(TimeGroup, "\\d")),
+    Group = ifelse(str_detect(TimeGroup, "\\.1"), "Group 2", "Group 1")
+  )
+
+# Plot the tidied data
+ggplot(calcium_clean, aes(x = Time, y = Value, color = Group, group = Subject)) +
+  geom_line(alpha = 0.6) +
+  geom_point() +
+  labs(
+    title = "Calcium Measurements Over Time by Group",
+    x = "Time Point",
+    y = "Measurement Value",
+    color = "Group"
+  ) +
+  theme_minimal()
+```
+
+## Appendix B: Code Appendix
+
+```         
+# This appendix prints all the R code used throughout the document.
+```
